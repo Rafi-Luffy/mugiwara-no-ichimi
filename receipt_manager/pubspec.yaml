@@ -1,0 +1,50 @@
+name: receipt_manager
+description: "A new Flutter project."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.8.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  uuid: ^4.3.3
+  add_to_google_wallet: ^0.0.5
+  image_picker: ^1.0.5
+  firebase_core: ^2.30.0
+  firebase_storage: ^11.7.0
+  cloud_firestore: ^4.15.0
+  http: ^1.4.0
+  http_parser: ^4.1.2
+  mime: ^2.0.0
+  path: ^1.9.1
+  flutter_card_swiper: ^7.0.2
+  # flutter_tindercard: ^0.2.0
+  # swipable_stack: ^2.0.0
+  # flutter_card_swiper: ^6.0.0
+  google_sign_in: ^6.1.5
+  firebase_auth: ^4.15.2
+  qr_flutter: ^4.1.0
+  # speech_to_text: ^6.3.0
+  permission_handler: ^11.0.1
+
+  # fluttertoast: ^8.2.8
+  # firebase_core: ^2.24.2
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/luffy_agent.png"
+  
