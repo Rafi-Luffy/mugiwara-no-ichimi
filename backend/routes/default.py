@@ -33,6 +33,7 @@ async def upload_image(file: UploadFile = File(...)):
     except Exception as e:
         return {"error": str(e)}
 
+
 @router.get("/receipt/{doc_id}")
 def get_structured_data(doc_id: str):
     doc_ref = db.collection("extracted_texts").document(doc_id)
@@ -229,81 +230,81 @@ async def get_user_preferences(user_id: str = Query(..., description="User ID to
         raise HTTPException(status_code=500, detail=f"Error retrieving preferences: {str(e)}")
 
     
-@router.get("/latest-receipt")
-def get_latest_receipt(user_id: str = Query(..., description="User ID from OAuth")):
-    try:
-        # Fetch user info from Firestore
-        user_doc_ref = db.collection("users").document(user_id)
-        user_doc = user_doc_ref.get()
+# @router.get("/latest-receipt")
+# def get_latest_receipt(user_id: str = Query(..., description="User ID from OAuth")):
+#     try:
+#         # Fetch user info from Firestore
+#         user_doc_ref = db.collection("users").document(user_id)
+#         user_doc = user_doc_ref.get()
 
-        if not user_doc.exists:
-            return JSONResponse(status_code=404, content={"error": "User not found"})
+#         if not user_doc.exists:
+#             return JSONResponse(status_code=404, content={"error": "User not found"})
 
-        user_data = user_doc.to_dict()
-        user_name = user_data.get("user_name", "Anonymous")
-        user_email = user_data.get("user_email", "")
+#         user_data = user_doc.to_dict()
+#         user_name = user_data.get("user_name", "Anonymous")
+#         user_email = user_data.get("user_email", "")
 
-        # Get all extracted_texts
-        docs = db.collection("extracted_texts").stream()
-        receipt_list = []
+#         # Get all extracted_texts
+#         docs = db.collection("extracted_texts").stream()
+#         receipt_list = []
 
-        for doc in docs:
-            data = doc.to_dict()
-            update_time_raw = data.get("status", {}).get("updateTime")
+#         for doc in docs:
+#             data = doc.to_dict()
+#             update_time_raw = data.get("status", {}).get("updateTime")
 
-            if not update_time_raw:
-                continue
+#             if not update_time_raw:
+#                 continue
 
-            try:
-                update_time = update_time_raw if isinstance(update_time_raw, datetime) else parse_date(str(update_time_raw))
-            except Exception as e:
-                print(f"Skipping doc due to invalid date: {doc.id}, error: {e}")
-                continue
+#             try:
+#                 update_time = update_time_raw if isinstance(update_time_raw, datetime) else parse_date(str(update_time_raw))
+#             except Exception as e:
+#                 print(f"Skipping doc due to invalid date: {doc.id}, error: {e}")
+#                 continue
 
-            receipt_list.append({
-                "doc_id": doc.id,
-                "data": data,
-                "update_time": update_time
-            })
+#             receipt_list.append({
+#                 "doc_id": doc.id,
+#                 "data": data,
+#                 "update_time": update_time
+#             })
 
-        if not receipt_list:
-            return JSONResponse(status_code=404, content={"error": "No valid receipts found"})
+#         if not receipt_list:
+#             return JSONResponse(status_code=404, content={"error": "No valid receipts found"})
 
-        # Sort by latest
-        latest = sorted(receipt_list, key=lambda x: x["update_time"], reverse=True)[0]
-        doc_id = latest["doc_id"]
-        doc_ref = db.collection("extracted_texts").document(doc_id)
+#         # Sort by latest
+#         latest = sorted(receipt_list, key=lambda x: x["update_time"], reverse=True)[0]
+#         doc_id = latest["doc_id"]
+#         doc_ref = db.collection("extracted_texts").document(doc_id)
 
-        # Update Firestore document with user info if not already added
-        update_fields = {}
-        if "user_id" not in latest["data"]:
-            update_fields["user_id"] = user_id
-        if "user_name" not in latest["data"]:
-            update_fields["user_name"] = user_name
-        if "user_email" not in latest["data"]:
-            update_fields["user_email"] = user_email
+#         # Update Firestore document with user info if not already added
+#         update_fields = {}
+#         if "user_id" not in latest["data"]:
+#             update_fields["user_id"] = user_id
+#         if "user_name" not in latest["data"]:
+#             update_fields["user_name"] = user_name
+#         if "user_email" not in latest["data"]:
+#             update_fields["user_email"] = user_email
 
-        if update_fields:
-            doc_ref.update(update_fields)
-            print(f"✅ Updated receipt {doc_id} with user info")
+#         if update_fields:
+#             doc_ref.update(update_fields)
+#             print(f"✅ Updated receipt {doc_id} with user info")
 
-        # Parse structured output
-        structured_output = latest["data"].get("structured_output", "")
-        cleaned_output = re.sub(r"^```json\n(.*?)\n```$", r"\1", structured_output.strip(), flags=re.DOTALL)
+#         # Parse structured output
+#         structured_output = latest["data"].get("structured_output", "")
+#         cleaned_output = re.sub(r"^```json\n(.*?)\n```$", r"\1", structured_output.strip(), flags=re.DOTALL)
 
-        try:
-            parsed_output = json.loads(cleaned_output)
-        except json.JSONDecodeError:
-            return JSONResponse(status_code=500, content={"error": "Invalid structured_output format"})
+#         try:
+#             parsed_output = json.loads(cleaned_output)
+#         except json.JSONDecodeError:
+#             return JSONResponse(status_code=500, content={"error": "Invalid structured_output format"})
 
-        return {
-            "receipt_id": doc_id,
-            "fetched_at": datetime.utcnow().isoformat() + "Z",
-            "data": parsed_output
-        }
+#         return {
+#             "receipt_id": doc_id,
+#             "fetched_at": datetime.utcnow().isoformat() + "Z",
+#             "data": parsed_output
+#         }
 
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+#     except Exception as e:
+#         return JSONResponse(status_code=500, content={"error": str(e)})
     
 '''
 @router.get("/latest-receipt")
@@ -359,3 +360,88 @@ def get_latest_receipt():
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 '''
+
+@router.get("/latest-receipt")
+def get_latest_receipt(user_id: str = Query(..., description="User ID from OAuth")):
+    try:
+        # Fetch user info from Firestore
+        user_doc_ref = db.collection("users").document(user_id)
+        user_doc = user_doc_ref.get()
+
+        if not user_doc.exists:
+            return JSONResponse(status_code=404, content={"error": "User not found"})
+
+        user_data = user_doc.to_dict()
+        user_name = user_data.get("user_name", "Anonymous")
+        user_email = user_data.get("user_email", "")
+        preferences_id = user_data.get("preferences_id")
+
+        user_preferences = None
+        if preferences_id:
+            preferences_doc = db.collection("user_preferences").document(preferences_id).get()
+            if preferences_doc.exists:
+                user_preferences = preferences_doc.to_dict().get("preferences", {})
+
+        # Get all extracted_texts documents
+        docs = db.collection("extracted_texts").stream()
+        receipt_list = []
+
+        for doc in docs:
+            data = doc.to_dict()
+            update_time_raw = data.get("status", {}).get("updateTime")
+
+            if not update_time_raw:
+                continue
+
+            try:
+                update_time = update_time_raw if isinstance(update_time_raw, datetime) else parse_date(str(update_time_raw))
+            except Exception as e:
+                print(f"Skipping doc due to invalid date: {doc.id}, error: {e}")
+                continue
+
+            receipt_list.append({
+                "doc_id": doc.id,
+                "data": data,
+                "update_time": update_time
+            })
+
+        if not receipt_list:
+            return JSONResponse(status_code=404, content={"error": "No valid receipts found"})
+
+        # Sort by latest
+        latest = sorted(receipt_list, key=lambda x: x["update_time"], reverse=True)[0]
+        doc_id = latest["doc_id"]
+        doc_ref = db.collection("extracted_texts").document(doc_id)
+
+        # Update Firestore document with user info & preferences if not already added
+        update_fields = {}
+        if "user_id" not in latest["data"]:
+            update_fields["user_id"] = user_id
+        if "user_name" not in latest["data"]:
+            update_fields["user_name"] = user_name
+        if "user_email" not in latest["data"]:
+            update_fields["user_email"] = user_email
+        if user_preferences and "user_preferences" not in latest["data"]:
+            update_fields["user_preferences"] = user_preferences
+
+        if update_fields:
+            doc_ref.update(update_fields)
+            print(f"✅ Updated receipt {doc_id} with user info and preferences")
+
+        # Parse structured output
+        structured_output = latest["data"].get("structured_output", "")
+        cleaned_output = re.sub(r"^```json\n(.*?)\n```$", r"\1", structured_output.strip(), flags=re.DOTALL)
+
+        try:
+            parsed_output = json.loads(cleaned_output)
+        except json.JSONDecodeError:
+            return JSONResponse(status_code=500, content={"error": "Invalid structured_output format"})
+
+        return {
+            "receipt_id": doc_id,
+            "fetched_at": datetime.utcnow().isoformat() + "Z",
+            "data": parsed_output
+        }
+
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})

@@ -2,21 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_card_swiper/flutter_card_swiper.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-// import 'package:fluttertoast/fluttertoast.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-// class PreferenceOnboardingScreen extends StatefulWidget {
-//   const PreferenceOnboardingScreen({super.key});
-
-//   @override
-//   State<PreferenceOnboardingScreen> createState() =>
-//       _PreferenceOnboardingScreenState();
-// }
 class PreferenceOnboardingScreen extends StatefulWidget {
   final String userId;
   final String userName;
   final String userEmail;
-  // final bool isFirstTime;
 
   const PreferenceOnboardingScreen({
     super.key,
@@ -104,6 +95,14 @@ class _PreferenceOnboardingScreenState
   bool allSwiped = false;
   bool isSubmitting = false;
 
+  // Controllers for different input types - Store values persistently
+  final TextEditingController _textController = TextEditingController();
+  
+  // Store dialog input state persistently
+  Map<String, String?> _dialogTextInputs = {};
+  Map<String, String?> _dialogDropdownSelections = {};
+  Map<String, List<String>> _dialogMultiSelections = {};
+
   @override
   void initState() {
     super.initState();
@@ -132,6 +131,14 @@ class _PreferenceOnboardingScreenState
     ));
 
     _luffyAnimationController.repeat(reverse: true);
+    
+    // Initialize dialog state maps
+    for (var pref in preferences) {
+      final key = pref['key'];
+      _dialogTextInputs[key] = null;
+      _dialogDropdownSelections[key] = null;
+      _dialogMultiSelections[key] = [];
+    }
   }
 
   @override
@@ -139,6 +146,7 @@ class _PreferenceOnboardingScreenState
     _luffyAnimationController.dispose();
     _cardAnimationController.dispose();
     _controller.dispose();
+    _textController.dispose();
     super.dispose();
   }
 
@@ -177,142 +185,150 @@ class _PreferenceOnboardingScreenState
     return true;
   }
 
-
   Future<dynamic> _showInputDialog(Map<String, dynamic> pref) async {
     final key = pref['key'];
     final inputType = pref['inputType'];
     final luffyMessage = pref['luffyMessage'];
 
+    // Initialize with existing values if they exist
+    if (additionalInputs.containsKey(key)) {
+      final existingValue = additionalInputs[key];
+      if (inputType == 'multiselect' && existingValue is List) {
+        _dialogMultiSelections[key] = List<String>.from(existingValue);
+      } else if (inputType == 'dropdown') {
+        _dialogDropdownSelections[key] = existingValue.toString();
+      } else {
+        _dialogTextInputs[key] = existingValue.toString();
+        _textController.text = existingValue.toString();
+      }
+    }
+
     return showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (BuildContext dialogContext) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        elevation: 16,
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.blue.shade50,
-                Colors.white,
-                Colors.blue.shade50,
-              ],
+      builder: (BuildContext dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          elevation: 16,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.blue.shade50,
+                  Colors.white,
+                  Colors.blue.shade50,
+                ],
+              ),
             ),
-          ),
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Luffy Avatar with message
-              Row(
-                children: [
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        colors: [Colors.orange.shade300, Colors.red.shade300],
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Luffy Avatar with message
+                Row(
+                  children: [
+                    Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          colors: [Colors.orange.shade300, Colors.red.shade300],
+                        ),
+                      ),
+                      child: ClipOval(
+                        child: Image.asset(
+                          'assets/images/luffy_agent.png',
+                          fit: BoxFit.cover,
+                        ),
                       ),
                     ),
-                    child: ClipOval(
-                          child: Image.asset(
-                            'assets/images/luffy_agent.png',
-                            fit: BoxFit.cover,
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          luffyMessage,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade100,
-                        borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Text(
-                        luffyMessage,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  pref['title'],
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                _buildInputWidget(inputType, key, setDialogState),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext, null),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.grey.shade600,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      ),
+                      child: const Text("Skip", style: TextStyle(fontSize: 16)),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => _submitDialogInput(dialogContext, inputType, key),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue.shade600,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
+                      child: const Text("Confirm", style: TextStyle(fontSize: 16)),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              Text(
-                pref['title'],
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+                  ],
                 ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
-              _buildInputWidget(inputType, key),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(dialogContext, null),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.grey.shade600,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    ),
-                    child: const Text("Skip", style: TextStyle(fontSize: 16)),
-                  ),
-                  ElevatedButton(
-                    onPressed: () => _submitDialogInput(dialogContext, inputType, key),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue.shade600,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: const Text("Confirm", style: TextStyle(fontSize: 16)),
-                  ),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  // Controllers for different input types
-  final TextEditingController _textController = TextEditingController();
-  String? _selectedLanguage;
-  String? _selectedExpiry;
-  List<String> _selectedFormats = [];
-
-  Widget _buildInputWidget(String inputType, String key) {
+  Widget _buildInputWidget(String inputType, String key, StateSetter setDialogState) {
     switch (inputType) {
       case 'dropdown':
         if (key == 'preferred_language') {
-          return _buildLanguageDropdown();
+          return _buildLanguageDropdown(setDialogState, key);
         } else if (key == 'receipt_expiry') {
-          return _buildExpiryDropdown();
+          return _buildExpiryDropdown(setDialogState, key);
         }
         break;
       case 'multiselect':
-        return _buildFormatMultiselect();
+        return _buildFormatMultiselect(setDialogState, key);
       case 'number':
       case 'email':
-        return _buildTextField(inputType, key);
+        return _buildTextField(inputType, key, setDialogState);
     }
     return Container();
   }
 
-  Widget _buildLanguageDropdown() {
+  Widget _buildLanguageDropdown(StateSetter setDialogState, String key) {
     final languages = [
       'English (Default)', 'Spanish', 'French', 'German', 'Italian',
       'Portuguese', 'Japanese', 'Korean', 'Chinese', 'Hindi', 'Arabic'
@@ -327,7 +343,7 @@ class _PreferenceOnboardingScreenState
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
-          value: _selectedLanguage,
+          value: _dialogDropdownSelections[key],
           hint: const Text('Select Language'),
           isExpanded: true,
           items: languages.map((String language) {
@@ -337,8 +353,8 @@ class _PreferenceOnboardingScreenState
             );
           }).toList(),
           onChanged: (String? newValue) {
-            setState(() {
-              _selectedLanguage = newValue;
+            setDialogState(() {
+              _dialogDropdownSelections[key] = newValue;
             });
           },
         ),
@@ -346,7 +362,7 @@ class _PreferenceOnboardingScreenState
     );
   }
 
-  Widget _buildExpiryDropdown() {
+  Widget _buildExpiryDropdown(StateSetter setDialogState, String key) {
     final expiryOptions = [
       '30 days', '60 days', '90 days', '6 months', '1 year', 'Never delete'
     ];
@@ -360,7 +376,7 @@ class _PreferenceOnboardingScreenState
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
-          value: _selectedExpiry,
+          value: _dialogDropdownSelections[key],
           hint: const Text('Select Duration'),
           isExpanded: true,
           items: expiryOptions.map((String option) {
@@ -370,8 +386,8 @@ class _PreferenceOnboardingScreenState
             );
           }).toList(),
           onChanged: (String? newValue) {
-            setState(() {
-              _selectedExpiry = newValue;
+            setDialogState(() {
+              _dialogDropdownSelections[key] = newValue;
             });
           },
         ),
@@ -379,7 +395,7 @@ class _PreferenceOnboardingScreenState
     );
   }
 
-  Widget _buildFormatMultiselect() {
+  Widget _buildFormatMultiselect(StateSetter setDialogState, String key) {
     final formats = ['PDF', 'Excel', 'JSON', 'CSV'];
     
     return Container(
@@ -393,13 +409,15 @@ class _PreferenceOnboardingScreenState
         children: formats.map((format) {
           return CheckboxListTile(
             title: Text(format),
-            value: _selectedFormats.contains(format),
+            value: _dialogMultiSelections[key]?.contains(format) ?? false,
             onChanged: (bool? value) {
-              setState(() {
+              setDialogState(() {
                 if (value == true) {
-                  _selectedFormats.add(format);
+                  if (!_dialogMultiSelections[key]!.contains(format)) {
+                    _dialogMultiSelections[key]!.add(format);
+                  }
                 } else {
-                  _selectedFormats.remove(format);
+                  _dialogMultiSelections[key]!.remove(format);
                 }
               });
             },
@@ -411,7 +429,12 @@ class _PreferenceOnboardingScreenState
     );
   }
 
-  Widget _buildTextField(String inputType, String key) {
+  Widget _buildTextField(String inputType, String key, StateSetter setDialogState) {
+    // Set initial text if it exists
+    if (_dialogTextInputs[key] != null) {
+      _textController.text = _dialogTextInputs[key]!;
+    }
+    
     return TextField(
       controller: _textController,
       keyboardType: inputType == 'number' ? TextInputType.number : 
@@ -430,6 +453,11 @@ class _PreferenceOnboardingScreenState
         fillColor: Colors.white,
       ),
       autofocus: true,
+      onChanged: (value) {
+        setDialogState(() {
+          _dialogTextInputs[key] = value;
+        });
+      },
     );
   }
 
@@ -438,24 +466,18 @@ class _PreferenceOnboardingScreenState
     
     switch (inputType) {
       case 'dropdown':
-        if (key == 'preferred_language') {
-          result = _selectedLanguage;
-        } else if (key == 'receipt_expiry') {
-          result = _selectedExpiry;
-        }
+        result = _dialogDropdownSelections[key];
         break;
       case 'multiselect':
-        result = _selectedFormats.isNotEmpty ? _selectedFormats : null;
+        result = _dialogMultiSelections[key]?.isNotEmpty == true ? _dialogMultiSelections[key] : null;
         break;
       default:
         result = _textController.text.trim().isNotEmpty ? _textController.text.trim() : null;
     }
     
-    // Reset controllers for next use
+    // Don't reset the values here - keep them for future reference
+    // Only clear the text controller
     _textController.clear();
-    _selectedLanguage = null;
-    _selectedExpiry = null;
-    _selectedFormats = [];
     
     Navigator.pop(dialogContext, result);
   }
@@ -473,136 +495,93 @@ class _PreferenceOnboardingScreenState
     }
   }
 
-  // Future<void> _submitPreferences() async {
-  //   setState(() {
-  //     isSubmitting = true;
-  //   });
-
-  //   final payload = <String, dynamic>{};
-  //   for (var pref in preferences) {
-  //     final key = pref['key'];
-  //     payload[key] = acceptedPreferences[key] == true
-  //         ? (additionalInputs.containsKey(key) 
-  //             ? {"enabled": true, "value": additionalInputs[key]} 
-  //             : true)
-  //         : false;
-  //   }
-
-  //   try {
-  //     // Replace with your actual backend URL
-  //     final response = await http.post(
-  //       Uri.parse('http://192.168.29.45:8000/user-preferences'),
-  //       headers: {'Content-Type': 'application/json'},
-  //       body: json.encode(payload),
-  //     );
-
-  //     if (response.statusCode == 200) {
-  //       // Success
-  //       Navigator.pop(context, payload);
-  //     } else {
-  //       // Handle error
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         const SnackBar(content: Text('Failed to save preferences')),
-  //       );
-  //     }
-  //   } catch (e) {
-  //     ScaffoldMessenger.of(context).showSnackBar(
-  //       SnackBar(content: Text('Error: $e')),
-  //     );
-  //   } finally {
-  //     setState(() {
-  //       isSubmitting = false;
-  //     });
-  //   }
-  // }
-
   Future<void> _submitPreferences() async {
-  setState(() {
-    isSubmitting = true;
-  });
+    setState(() {
+      isSubmitting = true;
+    });
 
-  // Build preferences payload according to Pydantic model
-  final preferencesData = <String, dynamic>{};
-  for (var pref in preferences) {
-    final key = pref['key'];
-    final isAccepted = acceptedPreferences[key] == true;
-    
-    if (isAccepted && additionalInputs.containsKey(key)) {
-      // Preference with additional input value
-      preferencesData[key] = {
-        "enabled": true,
-        "value": additionalInputs[key]
-      };
-    } else {
-      // Simple boolean preference
-      preferencesData[key] = isAccepted;
-    }
-  }
-
-  // Create the complete payload matching PreferencesPayload model
-  final payload = {
-    "user_id": widget.userId,
-    "user_name": widget.userName,
-    "user_email": widget.userEmail,
-    "preferences": preferencesData
-  };
-
-  try {
-    // Send to your FastAPI backend
-    final response = await http.post(
-      Uri.parse('http://192.168.29.45:8000/user-preferences'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode(payload),
-    );
-
-    if (response.statusCode == 200) {
-      // Parse the response
-      final responseData = json.decode(response.body);
+    // Build preferences payload according to Pydantic model
+    final preferencesData = <String, dynamic>{};
+    for (var pref in preferences) {
+      final key = pref['key'];
+      final isAccepted = acceptedPreferences[key] == true;
       
-      // Optional: Also save to Firestore if you want dual storage
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(widget.userId)
-          .set({
-            'user_name': widget.userName,
-            'user_email': widget.userEmail,
-            'preferences': preferencesData,
-            'preferences_id': responseData['preferences_id'],
-            'timestamp': FieldValue.serverTimestamp(),
-          });
+      if (isAccepted && additionalInputs.containsKey(key)) {
+        // Preference with additional input value
+        preferencesData[key] = {
+          "enabled": true,
+          "value": additionalInputs[key]
+        };
+      } else {
+        // Simple boolean preference
+        preferencesData[key] = isAccepted;
+      }
+    }
 
-      // Navigate back with success
-      Navigator.pop(context, preferencesData);
+    // Create the complete payload matching PreferencesPayload model
+    final payload = {
+      "user_id": widget.userId,
+      "user_name": widget.userName,
+      "user_email": widget.userEmail,
+      "preferences": preferencesData
+    };
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Hey, ${widget.userName}, you have successfully registered!'),
-          backgroundColor: Colors.green,
-        ),
+    try {
+      // Send to your FastAPI backend
+      final response = await http.post(
+        Uri.parse('http://192.168.32.150:8000/user-preferences'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(payload),
       );
-    } else {
-      // Handle HTTP error
-      final errorData = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        // Parse the response
+        final responseData = json.decode(response.body);
+        
+        // Optional: Also save to Firestore if you want dual storage
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(widget.userId)
+            .set({
+              'user_name': widget.userName,
+              'user_email': widget.userEmail,
+              'preferences': preferencesData,
+              'preferences_id': responseData['preferences_id'],
+              'timestamp': FieldValue.serverTimestamp(),
+            });
+
+        // Navigate back with success
+        Navigator.pop(context, preferencesData);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Hey, ${widget.userName}, you have successfully registered!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        // Handle HTTP error
+        final errorData = json.decode(response.body);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save preferences: ${errorData['detail'] ?? 'Unknown error'}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to save preferences: ${errorData['detail'] ?? 'Unknown error'}'),
+          content: Text('Network error: $e'),
           backgroundColor: Colors.red,
         ),
       );
+    } finally {
+      setState(() {
+        isSubmitting = false;
+      });
     }
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Network error: $e'),
-        backgroundColor: Colors.red,
-      ),
-    );
-  } finally {
-    setState(() {
-      isSubmitting = false;
-    });
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -669,17 +648,12 @@ class _PreferenceOnboardingScreenState
                           colors: [Colors.orange.shade300, Colors.red.shade300],
                         ),
                       ),
-                      // child: const Icon(
-                      //   Icons.sentiment_very_satisfied,
-                      //   color: Colors.white,
-                      //   size: 24,
-                      // ),
                       child: ClipOval(
-                          child: Image.asset(
-                            'assets/images/luffy_agent.png',
-                            fit: BoxFit.cover,
-                          ),
+                        child: Image.asset(
+                          'assets/images/luffy_agent.png',
+                          fit: BoxFit.cover,
                         ),
+                      ),
                     ),
                     const SizedBox(width: 12),
                     const Expanded(
@@ -825,11 +799,11 @@ class _PreferenceOnboardingScreenState
                         ),
                       ),
                       child: ClipOval(
-                          child: Image.asset(
-                            'assets/images/luffy_agent.png',
-                            fit: BoxFit.cover,
-                          ),
+                        child: Image.asset(
+                          'assets/images/luffy_agent.png',
+                          fit: BoxFit.cover,
                         ),
+                      ),
                     ),
                     const SizedBox(width: 12),
                     const Expanded(
