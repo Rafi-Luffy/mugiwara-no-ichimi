@@ -2,7 +2,7 @@ from google.generativeai import GenerativeModel
 import os
 
 # Ensure you set your environment variable or replace with actual key
-# os.environ["GOOGLE_API_KEY"] = "AIzaSyAyzZnCciBGhjqKpsNsLw-SewCqyhf3Eo4"
+# os.environ["GOOGLE_API_KEY"] = "<YOUR API Key>"
 
 model = GenerativeModel(model_name="models/gemini-2.0-flash")
 
