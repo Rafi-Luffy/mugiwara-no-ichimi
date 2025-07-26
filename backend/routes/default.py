@@ -73,7 +73,6 @@ def debug_all_receipts():
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-
 @router.post("/user-preferences", response_model=UserPreferencesResponse)
 async def save_user_preferences(payload: PreferencesPayload):
     print("preferences endpoint is called")
@@ -91,22 +90,29 @@ async def save_user_preferences(payload: PreferencesPayload):
             "created_at": firestore.SERVER_TIMESTAMP,
             "updated_at": firestore.SERVER_TIMESTAMP,
             "version": "1.0",
-            "preferences": {}  # All preferences will go here
+            "preferences": {}
         }
 
         # Process each preference
         for key, value in payload.preferences.items():
+            print(f"Processing key: {key}, value type: {type(value)}, value: {value}")
             preference_data = {
                 "configured_at": firestore.SERVER_TIMESTAMP
             }
-            
-            if isinstance(value, dict) and "enabled" in value:
-                # Handle PreferenceValue objects (enabled + value)
+
+            # Detect if value is a PreferenceValue instance or a dict
+            if isinstance(value, PreferenceValue):
+                pref_obj = value
+            elif isinstance(value, dict) and "enabled" in value:
                 pref_obj = PreferenceValue(**value)
+            else:
+                pref_obj = None
+
+            if pref_obj:
                 preference_data["enabled"] = pref_obj.enabled
                 preference_data["value"] = pref_obj.value
 
-                # Add specific validation and processing for different preference types
+                # Specific validations per key
                 if key == "preferred_language" and pref_obj.enabled:
                     preference_data["is_default"] = "Default" in str(pref_obj.value)
 
@@ -116,14 +122,14 @@ async def save_user_preferences(payload: PreferencesPayload):
                         preference_data["currency"] = "USD"
                     except (ValueError, TypeError):
                         raise HTTPException(
-                            status_code=400, 
+                            status_code=400,
                             detail="Invalid amount for auto_split_receipt"
                         )
 
                 elif key == "generate_invoice_pdf" and pref_obj.enabled:
                     if not pref_obj.value or "@" not in str(pref_obj.value):
                         raise HTTPException(
-                            status_code=400, 
+                            status_code=400,
                             detail="Invalid email for invoice"
                         )
                     preference_data["value"] = str(pref_obj.value).lower()
@@ -131,7 +137,7 @@ async def save_user_preferences(payload: PreferencesPayload):
                 elif key == "export_format" and pref_obj.enabled:
                     if not isinstance(pref_obj.value, list) or not pref_obj.value:
                         raise HTTPException(
-                            status_code=400, 
+                            status_code=400,
                             detail="At least one export format must be selected"
                         )
                     preference_data["value"] = pref_obj.value
@@ -145,7 +151,7 @@ async def save_user_preferences(payload: PreferencesPayload):
                         preference_data["currency"] = "USD"
                     except (ValueError, TypeError):
                         raise HTTPException(
-                            status_code=400, 
+                            status_code=400,
                             detail="Invalid savings amount"
                         )
 
@@ -159,14 +165,15 @@ async def save_user_preferences(payload: PreferencesPayload):
                         "Never delete": -1
                     }
                     preference_data["days"] = days_map.get(str(pref_obj.value), 90)
+
             else:
-                # Handle simple boolean preferences
+                # Simple boolean preference
                 preference_data["enabled"] = bool(value)
-            
-            # Add this preference to the preferences object
+
+            # Add to the preferences map
             user_preferences_doc["preferences"][key] = preference_data
 
-        # Save the single document to Firestore
+        # Save to Firestore
         db.collection("user_preferences").document(preference_id).set(user_preferences_doc)
         print(f"Saved preferences successfully with ID: {preference_id}")
 
@@ -176,12 +183,13 @@ async def save_user_preferences(payload: PreferencesPayload):
             preferences_id=preference_id,
             saved_at=datetime.utcnow().isoformat()
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         print(f"Error saving preferences: {e}")
         raise HTTPException(status_code=500, detail=f"Error saving preferences: {str(e)}")
+
 
 @router.get("/user-preferences-list")
 async def get_user_preferences(user_id: str = Query(..., description="User ID to fetch preferences for")):
