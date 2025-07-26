@@ -18,19 +18,42 @@ router = APIRouter(tags=["Default"])
 def ping():
     return {"message": "Backend is alive!"}
 
+# @router.post("/upload")
+# async def upload_image(file: UploadFile = File(...)):
+#     try:
+#         content = await file.read()
+#         filename = f"receipts/{uuid.uuid4()}_{file.filename}"
+
+#         blob = bucket.blob(filename)
+#         blob.upload_from_string(content, content_type=file.content_type)
+
+#         # Optional: make file public or return URL
+#         blob.make_public()
+#         return {"message": "Uploaded", "url": blob.public_url}
+#     except Exception as e:
+#         return {"error": str(e)}
+
 @router.post("/upload")
-async def upload_image(file: UploadFile = File(...)):
+async def upload_image(user_id: str = Query(..., description="User ID from OAuth"),file: UploadFile = File(...)):
     try:
         content = await file.read()
-        filename = f"receipts/{uuid.uuid4()}_{file.filename}"
+
+         # Sanitize filename: remove spaces, special chars (keep alphanumeric, dot, dash, underscore)
+        original_filename = re.sub(r'[^\w.\-]', '_', file.filename)
+
+        filename = f"receipts/{uuid.uuid4()}_{original_filename}"
 
         blob = bucket.blob(filename)
         blob.upload_from_string(content, content_type=file.content_type)
 
         # Optional: make file public or return URL
         blob.make_public()
-        return {"message": "Uploaded", "url": blob.public_url}
+
+        reciept = update_extracted_text(user_id,blob.public_url)
+        return {"receipt_id":reciept["receipt_id"],"fetched_at": datetime.utcnow().isoformat() + "Z","data" : get_structured_data(reciept["receipt_id"])}
+        return {"message": "Uploaded", "url": blob.public_url, "reciept":reciept["receipt_id"]}
     except Exception as e:
+        return {"error": str(e)}
         return {"error": str(e)}
 
 
