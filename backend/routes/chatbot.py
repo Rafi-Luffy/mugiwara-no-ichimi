@@ -51,7 +51,26 @@ def chat_with_bot(user_id: str = Query(..., description="User ID from OAuth"), p
         print(receipt_texts)
         # Process the prompt (this is a placeholder for actual processing logic)
         _, ref = db.collection("messages").add({
-            "prompt": f"Based on this context: {receipt_texts}, respond only to this prompt: {prompt}",
+            # "prompt": f"Based on this context: {receipt_texts}, respond only to this prompt: {prompt}",
+            "prompt" : f"""
+                You are Luffy, an intelligent assistant helping users manage their receipts and spending. 
+                You have access to the following structured receipt data (in JSON format):
+
+                {json.dumps(receipt_texts, indent=2)}
+
+                Now, the user has asked: "{prompt}"
+
+                Instructions:
+                - Analyze the receipts thoroughly before answering.
+                - Refer only to facts present in the receipts unless clarification is requested.
+                - Provide detailed, step-by-step explanations or summaries if necessary.
+                - If there are calculations involved (e.g., spending analysis), show them clearly.
+                - If multiple receipts are involved, group or compare them as needed.
+                - Your response should be informative, friendly, and accurate.
+
+                Respond clearly and concisely.
+                """
+
         })
         new_doc_id = ref.id
         max_polling_attempts = 30  # Max number of times to check (e.g., 30 attempts)
@@ -78,11 +97,12 @@ def chat_with_bot(user_id: str = Query(..., description="User ID from OAuth"), p
                     time.sleep(polling_interval_seconds)
                 else:
                     # Handle other unexpected states (e.g., "ERROR" set by your backend)
-                    print(f"Document {new_doc_id} has unexpected status: {current_status_state}. Data: {doc_data}")
-                    return JSONResponse(
-                        status_code=500,
-                        content={"error": f"Asynchronous processing for message ID {new_doc_id} ended in unexpected state: {current_status_state}."}
-                    )
+                    # print(f"Document {new_doc_id} has unexpected status: {current_status_state}. Data: {doc_data}")
+                    # return JSONResponse(
+                    #     status_code=500,
+                    #     content={"error": f"Asynchronous processing for message ID {new_doc_id} ended in unexpected state: {current_status_state}."}
+                    # )
+                    continue
             else:
                 print(f"Document {new_doc_id} no longer exists during polling. This is unexpected.")
                 return JSONResponse(status_code=500, content={"error": "Message processing document disappeared unexpectedly."})

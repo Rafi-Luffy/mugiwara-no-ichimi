@@ -67,25 +67,9 @@ def update_extracted_text(user_id: str = Query(..., description="User ID from OA
 
         doc_ref.update(update_fields)
         print(f"✅ Updated receipt {doc_id} with user info and preferences")
-        combined_data={
-            "user_id": user_id,
-            "user_name": user_name,
-            "user_email": user_email,
-            "user_preferences": user_preferences,
-            "file": doc_data["file"],
-            "structured_output": doc_data["structured_output"],
-            "text": doc_data["text"],
-            "created_at": datetime.now()
-        }
-        print(combined_data)
-        # combined_data = {**doc_data, **update_fields}
-        db.collection("combined_receipt").add(combined_data)
-        print("✅ Added to combined_receipt collection")
+           
 
-        return {
-            "receipt_id": doc_id,
-            "fetched_at": datetime.utcnow().isoformat() + "Z",
-        }
+        return doc_id
 
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})

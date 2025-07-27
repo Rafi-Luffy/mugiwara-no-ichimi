@@ -7,15 +7,14 @@ import json
 import re
 from datetime import datetime
 from fastapi import Query
-import google.generativeai as genai
 from models.models import *
 from services.default import parse_date, update_extracted_text
 from init import bucket, db
 
 router = APIRouter(tags=["Default"])
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel('gemini-1.5-flash')
+# genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+# model = genai.GenerativeModel('gemini-1.5-flash')
 
 @router.get("/ping")
 def ping():
@@ -37,10 +36,12 @@ async def upload_image(user_id: str = Query(..., description="User ID from OAuth
         # Optional: make file public or return URL
         blob.make_public()
 
-        reciept = update_extracted_text(user_id,blob.public_url)
-        return {"receipt_id":reciept["receipt_id"],"fetched_at": datetime.utcnow().isoformat() + "Z","data" : get_structured_data(reciept["receipt_id"])}
+        receipt_id = update_extracted_text(user_id,blob.public_url)
+        return {"receipt_id":receipt_id,"fetched_at": datetime.utcnow().isoformat() + "Z","data" : get_structured_data(receipt_id)}
         # return {"message": "Uploaded", "url": blob.public_url, "reciept":reciept["receipt_id"]}
     except Exception as e:
+        print("error ")
+        print(str(e))
         return {"error": str(e)}
 
 
@@ -456,189 +457,3 @@ def get_latest_receipt(user_id: str = Query(..., description="User ID from OAuth
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-@router.get("/smart-actions")
-async def get_smart_actions(
-    receipt_id: str = Query(..., description="Receipt ID from combined_receipt collection"),
-    user_id: str = Query(..., description="User ID for validation")
-):
-    try:
-        # Fetch receipt data from combined_receipt collection
-        receipt_docs = db.collection("combined_receipt").where("user_id", "==", user_id).stream()
-        
-        receipt_data = None
-        for doc in receipt_docs:
-            data = doc.to_dict()
-            # Match by receipt_id or find the most recent one
-            if receipt_id in str(doc.id) or not receipt_data:
-                receipt_data = data
-                break
-        
-        if not receipt_data:
-            raise HTTPException(status_code=404, detail="Receipt not found")
-        
-        structured_output = receipt_data.get("structured_output", "")
-        user_preferences = receipt_data.get("user_preferences", {})
-        
-        # Clean structured output if it has markdown formatting
-        import re
-        cleaned_output = re.sub(r"^```json\n(.*?)\n```$", r"\1", structured_output.strip(), flags=re.DOTALL)
-        
-        try:
-            structured_data = json.loads(cleaned_output)
-        except json.JSONDecodeError:
-            raise HTTPException(status_code=400, detail="Invalid structured output format")
-        
-        # Generate smart actions using Gemini
-        smart_actions = await generate_smart_actions_with_gemini(structured_data, user_preferences)
-        
-        return {
-            "success": True,
-            "receipt_id": receipt_id,
-            "smartactions": smart_actions,
-            "generated_at": datetime.utcnow().isoformat()
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Error generating smart actions: {e}")
-        raise HTTPException(status_code=500, detail=f"Error generating smart actions: {str(e)}")
-
-async def generate_smart_actions_with_gemini(structured_output: dict, user_preferences: dict) -> dict:
-    """Generate smart actions using Gemini AI based on receipt data and user preferences"""
-    
-    prompt = f"""You are a smart action suggesting agent.
-Your job is to enhance the user experience by analyzing two inputs:
-1. structured_output: a JSON object representing extracted receipt data.
-2. user_preferences: a JSON object representing the user's configured preferences, including which features are enabled and their corresponding values.
-
-Your task:
-For each user preference where "enabled": true, generate a **smart, personalized suggestion** in the form of a question or action, based on the receipt content (like total amount, expense category, or items).
-
-You must return a JSON object named "smartactions" where each key corresponds to a specific enabled preference.
-
-Each preference key should contain:
-- question: a meaningful, human-readable question or action prompt.
-- value: only if the preference contains a value (e.g. export format, days, amount).
-- currency: if the preference involves a currency-based value (e.g. savings, split, etc).
-
-Rules for each preference (if enabled):
-- auto_split_receipt: Suggest splitting the bill based on total_amount.
-  Example: "Would you like to auto-split this $93 receipt with friends?"
-- detect_similar_purchases: Suggest finding similar purchases.
-  Example: "Detect similar purchases from Reliance Fresh?"
-- export_format: Suggest exporting in the preferred formats.
-  Example: "Export this receipt in PDF and CSV formats?"
-- generate_invoice_pdf: Suggest sending a PDF invoice to the configured email.
-  Example: "Would you like a PDF invoice sent to keerthana@example.com?"
-- preferred_language: Just include the user's selected language as "value" (no question needed).
-- receipt_expiry: Show the expiry period the user prefers.
-  Example: "This receipt will be saved for 60 days."
-- savings_pot: Suggest saving a certain amount into a virtual pot.
-  Example: "Add $250 from this receipt to your savings pot?"
-
-Input Data:
-structured_output: {json.dumps(structured_output, indent=2)}
-
-user_preferences: {json.dumps(user_preferences, indent=2)}
-
-Return ONLY a valid JSON object with the "smartactions" key. Do not include any other text or formatting."""
-
-    try:
-        response = model.generate_content(prompt)
-        
-        # Extract JSON from response
-        response_text = response.text.strip()
-        
-        # Remove any markdown formatting if present
-        if response_text.startswith("```json"):
-            response_text = response_text[7:-3].strip()
-        elif response_text.startswith("```"):
-            response_text = response_text[3:-3].strip()
-        
-        # Parse the JSON response
-        result = json.loads(response_text)
-        
-        # Return the smartactions object
-        return result.get("smartactions", {})
-        
-    except json.JSONDecodeError as e:
-        print(f"Failed to parse Gemini response as JSON: {e}")
-        print(f"Raw response: {response.text}")
-        # Return fallback smart actions
-        return generate_fallback_smart_actions(structured_output, user_preferences)
-    except Exception as e:
-        print(f"Error calling Gemini API: {e}")
-        # Return fallback smart actions
-        return generate_fallback_smart_actions(structured_output, user_preferences)
-
-def generate_fallback_smart_actions(structured_output: dict, user_preferences: dict) -> dict:
-    """Generate fallback smart actions when Gemini API fails"""
-    
-    smart_actions = {}
-    shop_name = structured_output.get("shop_name", "this store")
-    total_amount = structured_output.get("total_amount", "0")
-    currency_symbol = "₹"  # Default to Indian Rupee, can be made dynamic
-    
-    # Generate actions for enabled preferences
-    for pref_key, pref_data in user_preferences.items():
-        if not isinstance(pref_data, dict) or not pref_data.get("enabled", False):
-            continue
-            
-        if pref_key == "auto_split_receipt":
-            split_amount = pref_data.get("value", total_amount)
-            smart_actions[pref_key] = {
-                "question": f"Would you like to auto-split this {currency_symbol}{total_amount} receipt with friends?",
-                "value": split_amount,
-                "currency": currency_symbol
-            }
-            
-        elif pref_key == "detect_similar_purchases":
-            smart_actions[pref_key] = {
-                "question": f"Detect similar purchases from {shop_name}?"
-            }
-            
-        elif pref_key == "export_format":
-            formats = pref_data.get("value", ["PDF"])
-            format_str = " and ".join(formats) if isinstance(formats, list) else str(formats)
-            smart_actions[pref_key] = {
-                "question": f"Export this receipt in {format_str} format?",
-                "value": formats
-            }
-            
-        elif pref_key == "generate_invoice_pdf":
-            email = pref_data.get("value", "your email")
-            smart_actions[pref_key] = {
-                "question": f"Would you like a PDF invoice sent to {email}?",
-                "value": email
-            }
-            
-        elif pref_key == "preferred_language":
-            language = pref_data.get("value", "English")
-            smart_actions[pref_key] = {
-                "question": f"Display in {language}",
-                "value": language
-            }
-            
-        elif pref_key == "receipt_expiry":
-            days = pref_data.get("days", 90)
-            if days == -1:
-                smart_actions[pref_key] = {
-                    "question": "This receipt will be saved permanently."
-                }
-            else:
-                smart_actions[pref_key] = {
-                    "question": f"This receipt will be saved for {days} days.",
-                    "value": days
-                }
-                
-        elif pref_key == "savings_pot":
-            amount = pref_data.get("value", 0)
-            currency = pref_data.get("currency", currency_symbol)
-            smart_actions[pref_key] = {
-                "question": f"Add {currency}{amount} from this receipt to your savings pot?",
-                "value": amount,
-                "currency": currency
-            }
-    
-    return smart_actions

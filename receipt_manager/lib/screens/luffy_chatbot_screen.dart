@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class LuffyChatbotScreen extends StatefulWidget {
   const LuffyChatbotScreen({super.key});
@@ -13,7 +14,7 @@ class _LuffyChatbotScreenState extends State<LuffyChatbotScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<ChatMessage> _messages = [];
-  
+
   bool _isLoading = false;
 
   @override
@@ -25,7 +26,8 @@ class _LuffyChatbotScreenState extends State<LuffyChatbotScreen> {
   void _addWelcomeMessage() {
     setState(() {
       _messages.add(ChatMessage(
-        text: "Ahoy! I'm Luffy, your AI assistant! 🏴‍☠️ I can help you find information from your receipts and documents. What would you like to know?",
+        text:
+            "Ahoy! I'm Luffy, your AI assistant! 🏴‍☠️ I can help you find information from your receipts and documents. What would you like to know?",
         isUser: false,
         timestamp: DateTime.now(),
       ));
@@ -48,9 +50,8 @@ class _LuffyChatbotScreenState extends State<LuffyChatbotScreen> {
     _scrollToBottom();
 
     try {
-      // Query the Firebase extension
       final response = await _queryLuffyAI(message);
-      
+
       setState(() {
         _messages.add(ChatMessage(
           text: response,
@@ -62,7 +63,8 @@ class _LuffyChatbotScreenState extends State<LuffyChatbotScreen> {
     } catch (e) {
       setState(() {
         _messages.add(ChatMessage(
-          text: "Sorry, I encountered an error while processing your request. Please try again! 🏴‍☠️",
+          text:
+              "Sorry, I encountered an error while processing your request. Please try again! 🏴‍☠️",
           isUser: false,
           timestamp: DateTime.now(),
         ));
@@ -80,36 +82,21 @@ class _LuffyChatbotScreenState extends State<LuffyChatbotScreen> {
         return "Please sign in to use the chatbot feature.";
       }
 
-      // Create a document in the collection that triggers the extension
-      final docRef = await FirebaseFirestore.instance
-          .collection('extracted_texts')
-          .add({
-            'prompt': prompt,
-            'user_id': user.uid,
-            'timestamp': FieldValue.serverTimestamp(),
-            'status': 'pending'
-          });
+      final userId = user.uid;
+      final uri = Uri.parse("http://192.168.32.150:8000/chat?user_id=$userId&prompt=${Uri.encodeComponent(prompt)}");
 
-      // Wait for the extension to process and add the response
-      DocumentSnapshot doc;
-      int attempts = 0;
-      const maxAttempts = 30; // 30 seconds timeout
-      
-      do {
-        await Future.delayed(const Duration(seconds: 1));
-        doc = await docRef.get();
-        attempts++;
-      } while ((!doc.exists || !(doc.data() as Map<String, dynamic>).containsKey('response')) && attempts < maxAttempts);
+      final httpResponse = await http.post(uri);
 
-      if (doc.exists && (doc.data() as Map<String, dynamic>).containsKey('response')) {
-        final data = doc.data() as Map<String, dynamic>;
-        return data['response'] ?? "I couldn't find a relevant answer in your documents.";
+      if (httpResponse.statusCode == 200) {
+        final data = json.decode(httpResponse.body);
+        return data['response'] ??
+            "Hmm... I couldn't find a relevant answer in your documents.";
       } else {
-        return "Sorry, I'm taking longer than expected to process your request. Please try again!";
+        return "Server returned an error: ${httpResponse.statusCode}";
       }
     } catch (e) {
-      print('Error querying Luffy AI: $e');
-      return "I encountered an error while searching through your documents. Please try again!";
+      print("Error querying FastAPI chatbot: $e");
+      return "Something went wrong. Please try again later!";
     }
   }
 
@@ -138,7 +125,7 @@ class _LuffyChatbotScreenState extends State<LuffyChatbotScreen> {
       appBar: AppBar(
         title: Row(
           children: [
-            CircleAvatar(
+            const CircleAvatar(
               radius: 16,
               backgroundImage: AssetImage('assets/images/luffy_agent.png'),
             ),
@@ -165,7 +152,7 @@ class _LuffyChatbotScreenState extends State<LuffyChatbotScreen> {
               },
             ),
           ),
-          
+
           // Input area
           Container(
             padding: const EdgeInsets.all(16),
@@ -200,8 +187,6 @@ class _LuffyChatbotScreenState extends State<LuffyChatbotScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                
-                // Send button
                 GestureDetector(
                   onTap: () => _sendMessage(_messageController.text),
                   child: Container(
@@ -229,12 +214,11 @@ class _LuffyChatbotScreenState extends State<LuffyChatbotScreen> {
       padding: const EdgeInsets.only(bottom: 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: message.isUser 
-            ? MainAxisAlignment.end 
-            : MainAxisAlignment.start,
+        mainAxisAlignment:
+            message.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
           if (!message.isUser) ...[
-            CircleAvatar(
+            const CircleAvatar(
               radius: 16,
               backgroundImage: AssetImage('assets/images/luffy_agent.png'),
             ),
@@ -244,9 +228,7 @@ class _LuffyChatbotScreenState extends State<LuffyChatbotScreen> {
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: message.isUser 
-                    ? Colors.blue 
-                    : Colors.grey.shade100,
+                color: message.isUser ? Colors.blue : Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(18),
               ),
               child: Text(
@@ -265,7 +247,9 @@ class _LuffyChatbotScreenState extends State<LuffyChatbotScreen> {
               backgroundColor: Colors.blue,
               child: Text(
                 FirebaseAuth.instance.currentUser?.displayName
-                    ?.substring(0, 1).toUpperCase() ?? 'U',
+                        ?.substring(0, 1)
+                        .toUpperCase() ??
+                    'U',
                 style: const TextStyle(color: Colors.white, fontSize: 12),
               ),
             ),
@@ -280,7 +264,7 @@ class _LuffyChatbotScreenState extends State<LuffyChatbotScreen> {
       padding: const EdgeInsets.only(bottom: 16),
       child: Row(
         children: [
-          CircleAvatar(
+          const CircleAvatar(
             radius: 16,
             backgroundImage: AssetImage('assets/images/luffy_agent.png'),
           ),
@@ -293,7 +277,7 @@ class _LuffyChatbotScreenState extends State<LuffyChatbotScreen> {
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
-              children: [
+              children: const [
                 SizedBox(
                   width: 20,
                   height: 20,
@@ -302,8 +286,8 @@ class _LuffyChatbotScreenState extends State<LuffyChatbotScreen> {
                     valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
                   ),
                 ),
-                const SizedBox(width: 8),
-                const Text('Luffy is thinking...'),
+                SizedBox(width: 8),
+                Text('Luffy is thinking...'),
               ],
             ),
           ),

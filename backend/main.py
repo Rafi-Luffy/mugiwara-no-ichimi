@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routes import default, chatbot
+from routes import default, chatbot, geminiADK
+# from routes.geminiADK.smart_actions import router as smart_actions_router
+
 
 app = FastAPI()
 
@@ -16,3 +18,4 @@ app.add_middleware(
 
 app.include_router(default.router)
 app.include_router(chatbot.router)
+app.include_router(geminiADK.router)

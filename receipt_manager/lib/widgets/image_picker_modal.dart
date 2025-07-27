@@ -60,7 +60,7 @@ class _ImagePickerModalState extends State<ImagePickerModal> {
 
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => ReceiptDetailsScreen(data: receiptData),
+            builder: (_) => ReceiptDetailsScreen(data: receiptData, receipt_id:responseBody['receipt_id']),
           ),
         );
       } else {

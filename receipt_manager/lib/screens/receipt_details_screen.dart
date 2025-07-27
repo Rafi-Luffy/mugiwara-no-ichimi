@@ -3,12 +3,17 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
-// import 'dart:convert';
+import 'smart_actions_screen.dart';
 
 class ReceiptDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> data;
+  final String receipt_id;
 
-  const ReceiptDetailsScreen({super.key, required this.data});
+  const ReceiptDetailsScreen({
+    Key? key,
+    required this.data,
+    required this.receipt_id,
+  }) : super(key: key);
 
   @override
   State<ReceiptDetailsScreen> createState() => _ReceiptDetailsScreenState();
@@ -151,32 +156,74 @@ class _ReceiptDetailsScreenState extends State<ReceiptDetailsScreen> {
             child: AddToGoogleWalletButton(
               pass: _buildWalletPass(widget.data),
               onError: (e) => _showSnackBar(context, "❌ Error: $e", Colors.red),
-              // onSuccess: () => _showSnackBar(context, "✅ Pass added successfully", Colors.green),
               onSuccess: () async {
-  final user = FirebaseAuth.instance.currentUser;
-  if (user == null) {
-    _showSnackBar(context, "❌ User not signed in", Colors.red);
-    return;
-  }
+                final user = FirebaseAuth.instance.currentUser;
+                if (user == null) {
+                  _showSnackBar(context, "❌ User not signed in", Colors.red);
+                  return;
+                }
 
-  // 👇 Save receipt as wallet pass
-  await FirebaseFirestore.instance.collection('wallet_passes').add({
-    'user_id': user.uid,
-    'shop_name': widget.data['shop_name'],
-    'shop_location': widget.data['shop_location'],
-    'total_amount': widget.data['total_amount'],
-    'expense_category': widget.data['expense_category'],
-    'date': widget.data['date'],
-    'items': widget.data['items'],
-    'timestamp': FieldValue.serverTimestamp(),
-  });
+                try {
+                  DocumentReference docRef = await FirebaseFirestore.instance.collection('wallet_passes').add({
+                    'user_id': user.uid,
+                    'shop_name': widget.data['shop_name'],
+                    'shop_location': widget.data['shop_location'],
+                    'total_amount': widget.data['total_amount'],
+                    'expense_category': widget.data['expense_category'],
+                    'date': widget.data['date'],
+                    'items': widget.data['items'],
+                    'timestamp': FieldValue.serverTimestamp(),
+                  });
 
-  _showSnackBar(context, "✅ Pass added successfully", Colors.green);
-},
+                  _showSnackBar(context, "✅ Pass added successfully", Colors.green);
 
+                  await Future.delayed(const Duration(milliseconds: 1500));
+
+                  if (mounted) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => SmartActionsScreen(
+                          receiptId: docRef.id,
+                          userId: user.uid,
+                        ),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  _showSnackBar(context, "❌ Error saving: $e", Colors.red);
+                }
+              },
               onCanceled: () => _showSnackBar(context, "⚠️ Canceled", Colors.orange),
             ),
-          )
+          ),
+
+          const SizedBox(height: 16),
+
+          // 👉 Preview Smart Actions button
+          Center(
+            child: TextButton.icon(
+              onPressed: () {
+                final user = FirebaseAuth.instance.currentUser;
+                if (user != null) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => SmartActionsScreen(
+                        receiptId: widget.receipt_id,
+                        userId: user.uid,
+                      ),
+                    ),
+                  );
+                }
+              },
+              icon: const Icon(Icons.auto_awesome),
+              label: const Text("Preview Smart Actions"),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.indigoAccent,
+              ),
+            ),
+          ),
         ],
       ),
     );
